@@ -18,7 +18,7 @@ export default function AuditLogsPage() {
       Object.keys(params).forEach((k) => { if (!params[k] || params[k] === '') delete params[k] })
       const [{ data: logsData }, { data: usersData }] = await Promise.all([
         api.get('/audit-logs', { params }),
-        api.get('/employees', { params: { limit: 500 } }),
+        api.get('/employees', { params: { limit: 200 } }),
       ])
       setLogs(logsData); setUsers(usersData)
     } catch (e) { toast.error(extractError(e)) }

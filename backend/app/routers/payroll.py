@@ -26,16 +26,6 @@ from app.utils.helpers import (
 router = APIRouter(prefix="/api/v1/payroll", tags=["Payroll & Salary"])
 
 
-def _get_client_ip(request: Request) -> Optional[str]:
-    try:
-        forwarded = request.headers.get("X-Forwarded-For")
-        if forwarded:
-            return forwarded.split(",")[0].strip()
-        return request.client.host if request.client else None
-    except Exception:
-        return None
-
-
 @router.post("/structures", response_model=SalaryStructureResponse, status_code=201)
 def create_salary_structure(
     data: SalaryStructureCreate,
@@ -83,7 +73,7 @@ def create_salary_structure(
 
     AuditLogger.log_create(
         db, current_user.user_id, "salary_structures", struct.structure_id,
-        data.model_dump(), ip_address=_get_client_ip(request),
+        data.model_dump(), ip_address=request.state.client_ip,
     )
     db.commit()
     db.refresh(struct)
@@ -263,7 +253,7 @@ def generate_payroll(
             {
                 "user_id": user.user_id, "month": data.pay_month, "year": data.pay_year,
                 "net": float(net), "paid_days": float(paid_days),
-            }, ip_address=_get_client_ip(request),
+            }, ip_address=request.state.client_ip,
         )
         NotificationService.create(
             db, user.user_id, NotificationType.PAYROLL_GENERATED,

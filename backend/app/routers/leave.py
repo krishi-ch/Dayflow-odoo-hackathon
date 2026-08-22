@@ -21,16 +21,6 @@ from app.utils.helpers import calculate_total_leave_days
 router = APIRouter(prefix="/api/v1/leave", tags=["Leave Management"])
 
 
-def _get_client_ip(request: Request) -> Optional[str]:
-    try:
-        forwarded = request.headers.get("X-Forwarded-For")
-        if forwarded:
-            return forwarded.split(",")[0].strip()
-        return request.client.host if request.client else None
-    except Exception:
-        return None
-
-
 @router.get("/types", response_model=List[LeaveTypeResponse])
 def list_leave_types(
     include_inactive: bool = False,
@@ -146,7 +136,7 @@ def apply_leave(
             "start": str(data.start_date), "end": str(data.end_date),
             "total_days": str(total_days), "reason": data.reason,
         },
-        ip_address=_get_client_ip(request),
+        ip_address=request.state.client_ip,
     )
 
     admins = db.query(models.User).filter(
@@ -283,7 +273,7 @@ def admin_action_on_leave(
     }
     AuditLogger.log_update(
         db, current_user.user_id, "leave_requests", request_id,
-        old_vals, new_vals, ip_address=_get_client_ip(request),
+        old_vals, new_vals, ip_address=request.state.client_ip,
     )
 
     notif_type = NotificationType.LEAVE_APPROVED if data.action == LeaveStatus.APPROVED else NotificationType.LEAVE_REJECTED

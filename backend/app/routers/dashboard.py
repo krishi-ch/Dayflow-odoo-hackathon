@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 from datetime import datetime, date, timezone as tz
-from typing import Optional
+from typing import List, Optional
 from fastapi import APIRouter, Depends, Request, Query
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func, and_
 
 from app.core.database import get_db
@@ -18,6 +18,59 @@ from app.models.attendance import AttendanceStatus
 from app.utils.helpers import profile_completion_percent, get_month_range
 
 router = APIRouter(prefix="/api/v1", tags=["Dashboard & Common"])
+
+
+# --- Employee card data for dashboard grid ---
+from pydantic import BaseModel, ConfigDict
+from datetime import datetime
+
+
+class DashboardEmployeeCard(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    user_id: int
+    employee_id: str
+    email: str
+    role: str
+    profile: Optional[dict] = None
+
+
+@router.get("/dashboard/employees", response_model=List[DashboardEmployeeCard])
+def dashboard_employees(
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Return all active users with their profiles for the employee cards grid."""
+    users = (
+        db.query(models.User)
+        .options(joinedload(models.User.profile))
+        .filter(models.User.is_active == True)
+        .all()
+    )
+    result = []
+    for u in users:
+        profile_data = None
+        if u.profile:
+            profile_data = {
+                "first_name": u.profile.first_name,
+                "last_name": u.profile.last_name,
+                "job_title": u.profile.job_title,
+                "department": u.profile.department,
+                "work_location": u.profile.work_location,
+                "phone": u.profile.phone,
+                "employment_type": u.profile.employment_type,
+                "joining_date": str(u.profile.joining_date) if u.profile.joining_date else None,
+                "profile_picture_url": u.profile.profile_picture_url,
+                "manager_id": u.profile.manager_id,
+            }
+        result.append(DashboardEmployeeCard(
+            user_id=u.user_id,
+            employee_id=u.employee_id,
+            email=u.email,
+            role=u.role.value if hasattr(u.role, 'value') else u.role,
+            profile=profile_data,
+        ))
+    return result
 
 
 def _emp_name_from_user(db, user_id: Optional[int]):

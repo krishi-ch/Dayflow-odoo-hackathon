@@ -34,6 +34,11 @@ class EmployeeProfileCreate(EmployeeProfileBase):
     user_id: int
 
 
+class EmployeeCreateWithAutoId(EmployeeProfileBase):
+    """Schema for admin creating employee with auto-generated ID (no user_id needed)."""
+    pass
+
+
 class EmployeeProfileUpdateSelf(BaseModel):
     address: Optional[str] = None
     phone: Optional[str] = None

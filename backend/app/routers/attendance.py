@@ -16,19 +16,10 @@ from app.schemas.common import NotificationCount
 from app.services.audit import AuditLogger, NotificationService
 from app.models.attendance import AttendanceStatus
 from app.models.audit import AuditAction
+from app.models.notification import NotificationType
 from app.core.config import settings
 
 router = APIRouter(prefix="/api/v1/attendance", tags=["Attendance"])
-
-
-def _get_client_ip(request: Request) -> Optional[str]:
-    try:
-        forwarded = request.headers.get("X-Forwarded-For")
-        if forwarded:
-            return forwarded.split(",")[0].strip()
-        return request.client.host if request.client else None
-    except Exception:
-        return None
 
 
 def _is_late(check_in: time) -> int:
@@ -68,14 +59,14 @@ def check_in(
         late_arrival_minutes=_is_late(t),
         geo_location_lat=data.geo_location_lat,
         geo_location_lng=data.geo_location_lng,
-        ip_address=_get_client_ip(request),
+        ip_address=request.state.client_ip,
     )
     db.add(rec)
     db.flush()
     AuditLogger.log_create(
         db, current_user.user_id, "attendance_records", rec.attendance_id,
         {"action": "check_in", "time": str(t), "late": rec.late_arrival_minutes},
-        ip_address=_get_client_ip(request),
+        ip_address=request.state.client_ip,
     )
     db.commit()
     db.refresh(rec)
@@ -109,7 +100,7 @@ def check_out(
     db.flush()
     AuditLogger.log_update(
         db, current_user.user_id, "attendance_records", rec.attendance_id,
-        {}, {"action": "check_out", "time": str(t)}, ip_address=_get_client_ip(request),
+        {}, {"action": "check_out", "time": str(t)}, ip_address=request.state.client_ip,
     )
     db.commit()
     db.refresh(rec)
@@ -201,13 +192,10 @@ def admin_update_attendance_status(
     AuditLogger.log_update(
         db, current_user.user_id, "attendance_records", rec.attendance_id,
         old_vals, {"status": data.status.value, "remarks": data.remarks},
-        ip_address=_get_client_ip(request),
+        ip_address=request.state.client_ip,
     )
     NotificationService.create(
-        db, user_id, type_enum=getattr(
-            __import__("app.models.notification", fromlist=["NotificationType"]),
-            "NotificationType",
-        ).ATTENDANCE_FLAG,
+        db, user_id, type_enum=NotificationType.ATTENDANCE_FLAG,
         title=f"Attendance Updated for {att_date}",
         message=f"Status set to {data.status.value}. Remarks: {data.remarks or 'N/A'}",
         reference_id=rec.attendance_id, reference_type="attendance",

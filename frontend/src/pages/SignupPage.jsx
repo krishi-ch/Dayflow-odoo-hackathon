@@ -34,7 +34,6 @@ export default function SignupPage() {
     e.preventDefault()
     setServerErr('')
 
-    // Validate all fields before submission
     const errs = {}
     const eidErr = validate(form.employee_id, required('Employee ID'), minLength(2, 'Employee ID'))
     if (eidErr) errs.employee_id = eidErr
@@ -59,41 +58,89 @@ export default function SignupPage() {
   }
 
   return (
-    <div className="min-h-screen grid md:grid-cols-2 bg-slate-50">
-      <div className="hidden md:flex items-center justify-center p-12 bg-gradient-to-br from-brand-700 via-brand-600 to-brand-800 text-white">
-        <div className="max-w-lg space-y-6">
+    <div className="min-h-screen grid md:grid-cols-2 bg-slate-950 overflow-hidden">
+      {/* ── Left panel: gradient + floating orbs + features ── */}
+      <div className="hidden md:flex flex-col justify-between relative overflow-hidden">
+        {/* Gradient background matching landing page */}
+        <div className="absolute inset-0 bg-gradient-to-br from-brand-600 via-brand-700 to-indigo-800" />
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,rgba(255,255,255,0.12),transparent_50%)]" />
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_bottom_left,rgba(99,102,241,0.3),transparent_50%)]" />
+
+        {/* Floating orbs */}
+        <div className="absolute top-16 left-[10%] w-64 h-64 bg-white/5 rounded-full blur-3xl animate-pulse" />
+        <div className="absolute bottom-20 right-[10%] w-80 h-80 bg-indigo-400/10 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '1s' }} />
+        <div className="absolute top-1/3 right-1/4 w-72 h-72 bg-brand-500/10 rounded-full blur-3xl" />
+
+        {/* Content */}
+        <div className="relative z-10 p-12 flex flex-col justify-between h-full">
+          {/* Logo */}
           <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-2xl bg-white/15 grid place-items-center text-2xl font-extrabold shadow-pop">D</div>
+            <div className="w-11 h-11 rounded-2xl bg-white/15 backdrop-blur-sm border border-white/20 grid place-items-center text-xl font-extrabold shadow-lg shadow-black/10">D</div>
             <div>
-              <div className="text-2xl font-extrabold">Dayflow</div>
-              <div className="text-xs uppercase tracking-[0.25em] text-white/70">HRMS · Create account</div>
+              <div className="text-xl font-extrabold tracking-tight text-white">Dayflow</div>
+              <div className="text-[10px] uppercase tracking-[0.3em] text-white/50 font-semibold">Create your account</div>
             </div>
           </div>
-          <h2 className="text-4xl font-extrabold leading-tight">Join Dayflow in under a minute.</h2>
-          <p className="text-white/80 text-lg">
-            Sign up with your Employee ID. Your Admin/HR will verify your role and grant access to company data.
-          </p>
-          <ul className="space-y-3">
-            {[
-              '🔐 Passwords are hashed with bcrypt',
-              '🛡️ Role-based access control (RBAC)',
-              '📜 Every action is captured in audit logs',
-            ].map((x) => (
-              <li key={x} className="flex items-center gap-3 bg-white/10 border border-white/15 rounded-xl px-4 py-3">
-                <span>{x.split(' ')[0]}</span>
-                <span className="text-sm">{x.slice(3)}</span>
-              </li>
-            ))}
-          </ul>
+
+          {/* Tagline + features */}
+          <div className="space-y-6 max-w-md">
+            <h1 className="text-4xl xl:text-5xl font-extrabold leading-[1.08] tracking-tight text-white">
+              Join Dayflow<br />
+              <span className="bg-gradient-to-r from-brand-200 via-indigo-200 to-brand-100 bg-clip-text text-transparent">
+                in under a minute.
+              </span>
+            </h1>
+            <p className="text-white/65 text-lg leading-relaxed">
+              Sign up with your Employee ID. Your Admin/HR will verify your role and grant access to company data.
+            </p>
+
+            {/* Feature cards */}
+            <div className="space-y-3 pt-2">
+              {[
+                { icon: '🔐', title: 'Secure by design', desc: 'Passwords hashed with bcrypt, JWT access + refresh tokens' },
+                { icon: '🛡️', title: 'Role-based access', desc: 'Admin, HR, and Employee roles with granular permissions' },
+                { icon: '📜', title: 'Full audit trail', desc: 'Every action logged with IP, timestamp, and before/after values' },
+              ].map((f) => (
+                <div key={f.title} className="flex items-start gap-3 bg-white/8 border border-white/10 rounded-xl px-4 py-3 backdrop-blur-sm">
+                  <div className="w-9 h-9 rounded-lg bg-white/10 grid place-items-center text-lg shrink-0 mt-0.5">{f.icon}</div>
+                  <div>
+                    <div className="text-sm font-bold text-white">{f.title}</div>
+                    <div className="text-xs text-white/50 mt-0.5">{f.desc}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Stats */}
+          <div className="flex items-center gap-6 text-xs text-white/40">
+            <div className="flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-success-400" />
+              <span>13 DB tables</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-success-400" />
+              <span>60+ API endpoints</span>
+            </div>
+          </div>
         </div>
       </div>
 
-      <div className="flex items-center justify-center p-6 sm:p-10">
-        <div className="w-full max-w-md">
+      {/* ── Right panel: form ── */}
+      <div className="flex items-center justify-center p-6 sm:p-10 bg-slate-50 relative">
+        {/* Subtle radial glow */}
+        <div className="absolute top-0 right-0 w-96 h-96 bg-brand-100/30 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2" />
+
+        <div className="relative w-full max-w-md">
+          {/* Mobile logo */}
           <div className="md:hidden mb-8 flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-brand-500 to-brand-800 text-white grid place-items-center font-extrabold">D</div>
-            <div className="font-extrabold text-xl">Dayflow</div>
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-brand-500 to-brand-800 text-white grid place-items-center font-extrabold shadow-lg shadow-brand-500/25">D</div>
+            <div>
+              <div className="font-extrabold text-xl text-slate-900">Dayflow</div>
+              <div className="text-[10px] uppercase tracking-[0.2em] text-slate-400 font-semibold">HRMS</div>
+            </div>
           </div>
+
           <h2 className="text-3xl font-extrabold tracking-tight text-slate-900">Create your account</h2>
           <p className="mt-2 text-slate-500">We'll send a verification link. (Demo mode: check /verify)</p>
 
@@ -145,7 +192,7 @@ export default function SignupPage() {
 
               {serverErr && <div className="rounded-lg bg-rose-50 text-rose-700 border border-rose-100 px-3 py-2 text-sm" role="alert">{serverErr}</div>}
 
-              <button className="btn-primary w-full py-3" disabled={loading}>
+              <button className="btn-primary w-full py-3 shadow-lg shadow-brand-500/25 hover:shadow-xl hover:shadow-brand-500/30 hover:-translate-y-0.5 transition-all" disabled={loading}>
                 {loading ? 'Creating account…' : 'Create account →'}
               </button>
             </form>

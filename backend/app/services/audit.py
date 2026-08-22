@@ -1,7 +1,19 @@
 from typing import Optional, Any
+from datetime import date, datetime
 from sqlalchemy.orm import Session
 from app import models
 from app.models.audit import AuditAction
+
+
+def _sanitize_for_json(obj):
+    """Recursively convert date/datetime objects to ISO strings for JSON serialization."""
+    if isinstance(obj, dict):
+        return {k: _sanitize_for_json(v) for k, v in obj.items()}
+    if isinstance(obj, (date, datetime)):
+        return obj.isoformat()
+    if isinstance(obj, list):
+        return [_sanitize_for_json(v) for v in obj]
+    return obj
 
 
 class AuditLogger:
@@ -22,8 +34,8 @@ class AuditLogger:
             action=action.value if isinstance(action, AuditAction) else action,
             table_name=table_name,
             record_id=record_id,
-            old_values=old_values,
-            new_values=new_values,
+            old_values=_sanitize_for_json(old_values) if old_values else None,
+            new_values=_sanitize_for_json(new_values) if new_values else None,
             ip_address=ip_address,
             user_agent=user_agent,
         )

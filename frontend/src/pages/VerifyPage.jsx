@@ -13,12 +13,11 @@ export default function VerifyPage() {
   const [demoTokens, setDemoTokens] = useState([])
 
   useEffect(() => {
-    // Show a helpful list of latest unverified user tokens for demo
-    api.get('/auth/me').catch(async () => {
-      try {
-        // No public endpoint; just suggest resending manually
-      } catch {}
-    })
+    // Probe auth state without triggering 401 redirect
+    const token = localStorage.getItem('dayflow:access_token')
+    if (token) {
+      api.get('/auth/me', { _skipRedirect: true }).catch(() => {})
+    }
   }, [])
 
   const submit = async (e) => {

@@ -14,3 +14,4 @@ email-validator==2.2.0
 pytz==2024.1
 python-dateutil==2.9.0.post0
 reportlab==4.2.2
+slowapi==0.1.9

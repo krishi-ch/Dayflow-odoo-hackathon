@@ -5,6 +5,10 @@ from fastapi.responses import RedirectResponse
 from fastapi.exceptions import RequestValidationError
 from fastapi import Request, status
 from fastapi.responses import JSONResponse
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 
 from app.core.config import settings
 from app.core.database import engine, Base
@@ -16,6 +20,17 @@ from app.routers.leave import router as leave_router
 from app.routers.payroll import router as payroll_router
 from app.routers.dashboard import router as dashboard_router
 from app.routers.ai_chat import router as ai_router
+
+# ── Rate limiter (shared across all routers via app.state.limiter) ──
+limiter = Limiter(key_func=get_remote_address)
+
+
+def _extract_client_ip(request: Request) -> str:
+    """Extract client IP, preferring X-Forwarded-For in production."""
+    forwarded = request.headers.get("X-Forwarded-For")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
 
 
 def create_app() -> FastAPI:
@@ -32,6 +47,18 @@ def create_app() -> FastAPI:
         redoc_url="/redoc",
         debug=settings.DEBUG,
     )
+
+    # ── Attach limiter to app so routers can reference it ──
+    app.state.limiter = limiter
+    app.add_middleware(SlowAPIMiddleware)
+
+    @app.middleware("http")
+    async def attach_request_context(request: Request, call_next):
+        """Attach client_ip and user_agent to request.state for audit logging."""
+        request.state.client_ip = _extract_client_ip(request)
+        request.state.user_agent = request.headers.get("user-agent", "")
+        response = await call_next(request)
+        return response
 
     app.add_middleware(
         CORSMiddleware,
@@ -53,6 +80,13 @@ def create_app() -> FastAPI:
         return JSONResponse(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             content={"detail": "Validation failed", "errors": errors},
+        )
+
+    @app.exception_handler(RateLimitExceeded)
+    async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
+        return JSONResponse(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            content={"detail": f"Rate limit exceeded: {exc.detail}"},
         )
 
     @app.get("/", include_in_schema=False)

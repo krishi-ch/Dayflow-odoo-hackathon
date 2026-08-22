@@ -1,7 +1,7 @@
 from datetime import datetime, date
 from typing import Optional, List
 from decimal import Decimal
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from app.models.leave import LeaveStatus, LeaveTypeName
 
 
@@ -26,8 +26,15 @@ class LeaveBalanceResponse(BaseModel):
     entitled_days: Decimal
     used_days: Decimal
     carry_forward_days: Decimal
-    available_days: Decimal
+    available_days: Optional[Decimal] = None
     leave_type: Optional[LeaveTypeResponse] = None
+
+    @model_validator(mode='after')
+    def compute_available(self):
+        if self.available_days is None:
+            total = (self.entitled_days or Decimal(0)) + (self.carry_forward_days or Decimal(0)) - (self.used_days or Decimal(0))
+            self.available_days = max(total, Decimal(0))
+        return self
 
 
 class LeaveRequestCreate(BaseModel):

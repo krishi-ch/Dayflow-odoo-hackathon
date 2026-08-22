@@ -8,7 +8,6 @@ import { formatDate, yyyy_mm_dd } from '../../utils/formatters.js'
 
 export default function EmployeesPage() {
   const [list, setList] = useState([])
-  const [users, setUsers] = useState([])
   const [search, setSearch] = useState('')
   const [dept, setDept] = useState('')
   const [activeOnly, setActiveOnly] = useState(true)
@@ -29,18 +28,14 @@ export default function EmployeesPage() {
       if (search) params.search = search
       if (dept) params.department = dept
       if (activeOnly) params.is_active = true
-      const [{ data: p }, { data: u }] = await Promise.all([
-        api.get('/employees', { params }),
-        api.get('/employees', { params: { limit: 500 } }),
-      ])
-      setList(p); setUsers(u)
+      const { data } = await api.get('/employees', { params })
+      setList(data)
     } catch (e) { toast.error(extractError(e)) }
   }
 
   useEffect(() => { load() }, [search, dept, activeOnly])
 
-  const departments = Array.from(new Set(users.map((u) => u.department).filter(Boolean)))
-  const withoutProfiles = users.filter((u) => !list.find((l) => l.user_id === u.user_id))
+  const departments = Array.from(new Set(list.map((p) => p.department).filter(Boolean)))
 
   const saveProfile = async () => {
     if (!newProfile.user_id) { toast.warning('Select a user.'); return }
@@ -54,7 +49,13 @@ export default function EmployeesPage() {
 
   const toggleActive = async (p, active) => {
     try {
-      await api.put(`/employees/${p.profile_id}`, { ...p, is_active: active })
+      await api.put(`/employees/${p.profile_id}`, {
+        first_name: p.first_name,
+        last_name: p.last_name,
+        job_title: p.job_title,
+        joining_date: p.joining_date,
+        is_active: active,
+      })
       toast.success(`Employee ${active ? 'reactivated' : 'deactivated'}`)
       load()
     } catch (e) { toast.error(extractError(e)) }
@@ -71,11 +72,9 @@ export default function EmployeesPage() {
         <button className="btn-primary" onClick={() => setShowCreate(true)}>+ Create profile</button>
       </header>
 
-      <section className="grid md:grid-cols-4 gap-4">
+      <section className="grid md:grid-cols-3 gap-4">
         <StatCard title="Total profiles" value={list.length} icon="🧑‍🤝‍🧑" tone="brand" />
         <StatCard title="Departments" value={departments.length} icon="🏢" tone="violet" />
-        <StatCard title="Missing profiles" value={withoutProfiles.length} icon="⚠️" tone="amber"
-          hint="Users without employee records" />
         <StatCard title="Active" value={list.filter((e) => e.is_active).length} icon="✅" tone="green" />
       </section>
 
@@ -147,14 +146,7 @@ export default function EmployeesPage() {
                 <label className="label">User (registered account)</label>
                 <select className="input" value={newProfile.user_id}
                   onChange={(e) => setNewProfile({ ...newProfile, user_id: e.target.value })}>
-                  <option value="">— select user —</option>
-                  {withoutProfiles.length
-                    ? withoutProfiles.map((u) => (
-                        <option key={u.user_id} value={u.user_id}>#{u.user_id} · {u.employee_id} · {u.email}</option>
-                      ))
-                    : users.map((u) => (
-                        <option key={u.user_id} value={u.user_id}>#{u.user_id} · {u.employee_id} · {u.email}</option>
-                      ))}
+                  <option value="">— users already have profiles —</option>
                 </select>
               </div>
               {[

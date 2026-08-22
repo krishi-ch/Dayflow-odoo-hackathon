@@ -60,3 +60,6 @@ htmlcov/
 
 # ── Docker volumes (local dev data) ──
 docker/data/
+
+# ── Freebuff tool state ──
+.freebuff/

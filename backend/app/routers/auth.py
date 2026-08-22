@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, status, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from sqlalchemy import func
@@ -23,18 +23,9 @@ from app.core.config import settings
 router = APIRouter(prefix="/api/v1/auth", tags=["Authentication"])
 
 
-def _get_client_ip(request: Request) -> Optional[str]:
-    try:
-        forwarded = request.headers.get("X-Forwarded-For")
-        if forwarded:
-            return forwarded.split(",")[0].strip()
-        return request.client.host if request.client else None
-    except Exception:
-        return None
-
-
 @router.post("/signup", response_model=UserResponse, status_code=201)
 def signup(data: UserCreate, request: Request, db: Session = Depends(get_db)):
+    from app.main import limiter
     existing_email = db.query(models.User).filter(
         func.lower(models.User.email) == func.lower(data.email)
     ).first()
@@ -72,7 +63,7 @@ def signup(data: UserCreate, request: Request, db: Session = Depends(get_db)):
     AuditLogger.log_create(
         db, user.user_id, "users", user.user_id,
         {"email": user.email, "role": user.role, "employee_id": user.employee_id},
-        ip_address=_get_client_ip(request),
+        ip_address=request.state.client_ip,
     )
     db.commit()
     db.refresh(user)
@@ -87,8 +78,13 @@ def verify_email(data: VerificationRequest, db: Session = Depends(get_db)):
     ).first()
     if not user:
         raise HTTPException(status_code=400, detail="Invalid or already used verification token")
-    if user.verification_expiry and user.verification_expiry < datetime.now(timezone.utc):
-        raise HTTPException(status_code=400, detail="Verification token expired")
+    now = datetime.now(timezone.utc)
+    expiry = user.verification_expiry
+    if expiry:
+        if expiry.tzinfo is None:
+            expiry = expiry.replace(tzinfo=timezone.utc)
+        if expiry < now:
+            raise HTTPException(status_code=400, detail="Verification token expired")
 
     user.is_verified = True
     user.verification_token = None
@@ -126,11 +122,11 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), request: Request = N
     user.locked_until = None
     user.last_login_at = now
     if request:
-        user.last_login_ip = _get_client_ip(request)
+        user.last_login_ip = request.state.client_ip
 
     AuditLogger.log(
         db, user.user_id, AuditAction.LOGIN,
-        "users", user.user_id, ip_address=_get_client_ip(request),
+        "users", user.user_id, ip_address=request.state.client_ip if request else None,
     )
     db.commit()
     db.refresh(user)
@@ -158,7 +154,7 @@ def refresh_token(data: TokenRefresh, db: Session = Depends(get_db)):
 def logout(request: Request, current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
     AuditLogger.log(
         db, current_user.user_id, AuditAction.LOGOUT,
-        "users", current_user.user_id, ip_address=_get_client_ip(request),
+        "users", current_user.user_id, ip_address=request.state.client_ip,
     )
     db.commit()
     return {"detail": "Logged out successfully"}

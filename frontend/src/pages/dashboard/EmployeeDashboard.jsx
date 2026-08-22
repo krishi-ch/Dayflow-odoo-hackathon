@@ -1,65 +1,81 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useState, useCallback } from 'react'
 import { Link } from 'react-router-dom'
 import api, { extractError } from '../../utils/api.js'
 import { toast } from '../../components/Toast.jsx'
 import LoadingSpinner from '../../components/LoadingSpinner.jsx'
-import StatCard from '../../components/StatCard.jsx'
 import Avatar from '../../components/Avatar.jsx'
 import { useAuth } from '../../context/AuthContext.jsx'
-import { formatDate, formatMoney, statusBadge, yyyy_mm_dd, addDays } from '../../utils/formatters.js'
+import { formatDate, yyyy_mm_dd, addDays, statusBadge } from '../../utils/formatters.js'
 
 export default function EmployeeDashboard() {
   const { user } = useAuth()
-  const [stats, setStats] = useState(null)
+  const [profile, setProfile] = useState(null)
   const [todayAtt, setTodayAtt] = useState(null)
-  const [recentLeaves, setRecentLeaves] = useState([])
+  const [stats, setStats] = useState(null)
   const [balances, setBalances] = useState([])
+  const [recentAtt, setRecentAtt] = useState([])
+  const [recentLeaves, setRecentLeaves] = useState([])
   const [checking, setChecking] = useState(false)
-  const [checkingOut, setCheckingOut] = useState(false)
-  const [myAttendance, setMyAttendance] = useState([])
   const [loading, setLoading] = useState(true)
+  const [elapsed, setElapsed] = useState(null)
 
-  const refreshStats = async () => {
+  const loadDashboard = useCallback(async () => {
     try {
-      const { data } = await api.get('/dashboard/employee')
-      setStats(data)
-    } catch (e) { toast.error(extractError(e, 'Stats failed')) }
-  }
-  const refreshToday = async () => {
-    try {
-      const { data } = await api.get('/attendance/today')
-      setTodayAtt(data)
-    } catch {}
-  }
-  const refreshLeaves = async () => {
-    try {
-      const { data } = await api.get('/leave/my/requests', { params: { limit: 5 } })
-      setRecentLeaves(data)
-    } catch {}
-  }
-  const refreshBalances = async () => {
-    try {
-      const { data } = await api.get('/leave/balances/my')
-      setBalances(data)
-    } catch {}
-  }
-  const refreshRecentAttendance = async () => {
-    const today = yyyy_mm_dd()
-    const from = yyyy_mm_dd(addDays(new Date(), -13))
-    try {
-      const { data } = await api.get('/attendance/my/daily', { params: { start_date: from, end_date: today } })
-      setMyAttendance(data)
-    } catch {}
-  }
+      const [profRes, attRes, statsRes, balRes, recAttRes, leavesRes] = await Promise.all([
+        api.get('/employees/me').catch(() => ({ data: null })),
+        api.get('/attendance/today').catch(() => ({ data: null })),
+        api.get('/dashboard/employee').catch(() => ({ data: {} })),
+        api.get('/leave/balances/my').catch(() => ({ data: [] })),
+        api.get('/attendance/my/daily', {
+          params: {
+            start_date: yyyy_mm_dd(addDays(new Date(), -13)),
+            end_date: yyyy_mm_dd(),
+          }
+        }).catch(() => ({ data: [] })),
+        api.get('/leave/my/requests', { params: { limit: 5 } }).catch(() => ({ data: [] })),
+      ])
+      setProfile(profRes.data)
+      setTodayAtt(attRes.data)
+      setStats(statsRes.data)
+      setBalances(balRes.data)
+      setRecentAtt(recAttRes.data)
+      setRecentLeaves(leavesRes.data)
+    } catch (e) {
+      toast.error(extractError(e, 'Failed to load dashboard'))
+    }
+  }, [])
 
   useEffect(() => {
     const init = async () => {
       setLoading(true)
-      await Promise.all([refreshStats(), refreshToday(), refreshLeaves(), refreshBalances(), refreshRecentAttendance()])
+      await loadDashboard()
       setLoading(false)
     }
     init()
-  }, [])
+  }, [loadDashboard])
+
+  // Elapsed timer for check-in
+  useEffect(() => {
+    if (!todayAtt?.check_in_time || todayAtt?.check_out_time) {
+      setElapsed(null)
+      return
+    }
+    const checkInTime = new Date()
+    const [h, m] = todayAtt.check_in_time.split(':').map(Number)
+    checkInTime.setHours(h, m, 0, 0)
+    if (checkInTime > new Date()) checkInTime.setDate(checkInTime.getDate() - 1)
+
+    const update = () => {
+      const diff = Date.now() - checkInTime.getTime()
+      const hrs = Math.floor(diff / 3600000)
+      const mins = Math.floor((diff % 3600000) / 60000)
+      const secs = Math.floor((diff % 60000) / 1000)
+      setElapsed(`${String(hrs).padStart(2, '0')}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`)
+    }
+    update()
+    const iv = setInterval(update, 1000)
+    return () => clearInterval(iv)
+  }, [todayAtt])
 
   const doCheckIn = async () => {
     setChecking(true)
@@ -67,129 +83,165 @@ export default function EmployeeDashboard() {
       const { data } = await api.post('/attendance/check-in', {})
       setTodayAtt(data)
       toast.success(`Checked in at ${data.check_in_time?.slice(0, 5)} 🎉`)
-      refreshStats()
+      loadDashboard()
     } catch (e) { toast.error(extractError(e)) }
     finally { setChecking(false) }
   }
+
   const doCheckOut = async () => {
-    setCheckingOut(true)
+    setChecking(true)
     try {
       const { data } = await api.post('/attendance/check-out', {})
       setTodayAtt(data)
       toast.success(`Checked out at ${data.check_out_time?.slice(0, 5)}. Have a nice evening! 🌙`)
-      refreshStats()
+      setElapsed(null)
+      loadDashboard()
     } catch (e) { toast.error(extractError(e)) }
-    finally { setCheckingOut(false) }
+    finally { setChecking(false) }
   }
 
-  if (loading) return <LoadingSpinner full text="Loading your dashboard…" />
+  if (loading) return <LoadingSpinner full text="Loading dashboard…" />
 
-  const presenceEmoji = stats?.present_today ? ({
-    present: '✅', absent: '🔴', half_day: '🕒', leave: '🏖️',
-  }[stats.present_today] || '—') : '⏳'
+  const isCheckIn = todayAtt && !todayAtt.check_out_time
+  const isCheckedOut = todayAtt?.check_out_time
+  const notCheckedIn = !todayAtt
 
   return (
     <div className="space-y-6 animate-slideUp">
-      <header className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <div className="text-xs uppercase tracking-widest text-slate-500 font-semibold">Employee workspace</div>
-          <h1 className="mt-1 text-2xl md:text-3xl font-extrabold text-slate-900 tracking-tight">
-            Hey {user?.email?.split('@')[0] || 'there'} 👋
-          </h1>
-          <p className="mt-1 text-slate-500 text-sm">Here's everything you need for today, aligned.</p>
-        </div>
-        <div className="flex items-center gap-2">
-          {todayAtt ? (
-            todayAtt.check_out_time ? (
-              <div className="card-body py-2 px-4 !bg-slate-50 text-sm">
-                Checked out <span className="font-bold text-slate-800">{todayAtt.check_out_time?.slice(0,5)}</span>
+      {/* Profile Card + Check In/Out */}
+      <div className="card overflow-hidden">
+        <div className="h-20 bg-gradient-to-br from-brand-500 via-brand-700 to-brand-900" />
+        <div className="px-5 pb-5 -mt-8 relative z-10">
+          <div className="flex flex-col sm:flex-row items-start sm:items-end gap-4">
+            <div className="ring-4 ring-white rounded-full">
+              <Avatar size="xl" user={user} profile={profile} showText={false} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <h1 className="text-2xl font-extrabold text-slate-900">
+                {profile ? `${profile.first_name} ${profile.last_name}` : user?.employee_id}
+              </h1>
+              <div className="flex items-center gap-3 mt-1 text-sm text-slate-500 flex-wrap">
+                <span className="font-mono">{user?.employee_id}</span>
+                <span>·</span>
+                <span>{profile?.job_title || 'Employee'}</span>
+                <span>·</span>
+                <span>{profile?.department || '—'}</span>
               </div>
+            </div>
+            <div className="card card-body !py-3 !px-5 flex items-center gap-4">
+              {isCheckIn && elapsed && (
+                <div className="text-center">
+                  <div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">Time</div>
+                  <div className="text-xl font-extrabold font-mono text-brand-700">{elapsed}</div>
+                </div>
+              )}
+              {notCheckedIn && (
+                <button className="btn-success flex items-center gap-2" onClick={doCheckIn} disabled={checking}>
+                  Check IN →
+                </button>
+              )}
+              {isCheckIn && (
+                <button className="btn-warning flex items-center gap-2" onClick={doCheckOut} disabled={checking}>
+                  Check Out →
+                </button>
+              )}
+              {isCheckedOut && (
+                <div className="text-sm text-slate-500">
+                  Checked out at <span className="font-bold text-slate-800">{todayAtt.check_out_time?.slice(0,5)}</span>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Quick Stats */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="card card-body text-center !py-4">
+          <div className="text-xs uppercase tracking-wider text-slate-500 font-semibold">Today's Status</div>
+          <div className="text-2xl font-extrabold mt-1">
+            {todayAtt ? (
+              <span className={todayAtt.status === 'present' ? 'text-success-600' : todayAtt.status === 'leave' ? 'text-danger-600' : 'text-warning-600'}>
+                {todayAtt.status?.toUpperCase()}
+              </span>
             ) : (
-              <button className="btn-warning" onClick={doCheckOut} disabled={checkingOut}>
-                {checkingOut ? 'Checking out…' : '⏹ Check out'}
-              </button>
-            )
-          ) : (
-            <button className="btn-success" onClick={doCheckIn} disabled={checking}>
-              {checking ? 'Checking in…' : '▶ Check in now'}
-            </button>
+              <span className="text-slate-400">NOT MARKED</span>
+            )}
+          </div>
+          {todayAtt?.check_in_time && (
+            <div className="text-xs text-slate-500 mt-1">In: {todayAtt.check_in_time?.slice(0,5)} · Out: {todayAtt.check_out_time?.slice(0,5) || '—'}</div>
           )}
         </div>
-      </header>
+        <div className="card card-body text-center !py-4">
+          <div className="text-xs uppercase tracking-wider text-slate-500 font-semibold">Profile</div>
+          <div className="text-2xl font-extrabold text-brand-700 mt-1">{stats?.profile_completion_pct ?? 0}%</div>
+          <Link to="/profile" className="text-xs text-brand-600 hover:underline mt-1">Complete →</Link>
+        </div>
+        <div className="card card-body text-center !py-4">
+          <div className="text-xs uppercase tracking-wider text-slate-500 font-semibold">Pending Leave</div>
+          <div className="text-2xl font-extrabold text-amber-600 mt-1">{stats?.pending_leave_requests ?? 0}</div>
+          <Link to="/leave" className="text-xs text-brand-600 hover:underline mt-1">Apply leave →</Link>
+        </div>
+        <div className="card card-body text-center !py-4">
+          <div className="text-xs uppercase tracking-wider text-slate-500 font-semibold">Leave Balance</div>
+          <div className="text-2xl font-extrabold text-success-600 mt-1">{stats?.available_leave_balance ?? 0}d</div>
+          <Link to="/leave" className="text-xs text-brand-600 hover:underline mt-1">View all →</Link>
+        </div>
+      </div>
 
-      <section className="grid md:grid-cols-2 xl:grid-cols-4 gap-4">
-        <StatCard title="Today's Status" value={<span className="inline-flex items-center gap-2"><span className="text-4xl">{presenceEmoji}</span>{stats?.present_today ? (stats.present_today.toUpperCase()) : 'NOT MARKED'}</span>}
-          hint={todayAtt ? <>Check-in <b>{todayAtt.check_in_time?.slice(0,5) || '—'}</b> · Check-out <b>{todayAtt.check_out_time?.slice(0,5) || '—'}</b></> : 'Tap the button to the right to check in'}
-          icon="🕘" tone="brand" />
-        <StatCard title="Profile Completion" value={`${stats?.profile_completion_pct ?? 0}%`}
-          hint="Complete your profile for payroll accuracy"
-          icon="👤" tone="violet" action={<Link to="/profile" className="text-sm font-semibold text-brand-700 hover:underline">Complete profile →</Link>} />
-        <StatCard title="Pending Leave Requests" value={stats?.pending_leave_requests ?? 0}
-          hint={`${stats?.approved_leave_days_this_month ?? 0} day(s) approved this month`}
-          icon="📝" tone="amber" action={<Link to="/leave" className="text-sm font-semibold text-brand-700 hover:underline">Apply leave →</Link>} />
-        <StatCard title="Available Leave Balance" value={stats?.available_leave_balance ?? 0}
-          hint={`${stats?.used_leave_days_this_year ?? 0} day(s) used this year`}
-          icon="🏖️" tone="green" action={<Link to="/leave#balances" className="text-sm font-semibold text-brand-700 hover:underline">View balances →</Link>} />
-      </section>
-
-      <section className="grid lg:grid-cols-3 gap-6">
+      {/* Two columns: Attendance + Leave Balance */}
+      <div className="grid lg:grid-cols-3 gap-6">
+        {/* Recent Attendance */}
         <div className="card lg:col-span-2">
-          <div className="flex items-center justify-between px-5 pt-5">
+          <div className="px-5 pt-5 flex items-center justify-between">
             <div>
               <h3 className="font-bold text-slate-900">Your attendance — last 2 weeks</h3>
-              <p className="text-sm text-slate-500">Rolling daily view with status</p>
+              <p className="text-sm text-slate-500">Daily check-in/out status</p>
             </div>
-            <Link to="/attendance" className="text-sm font-semibold text-brand-700 hover:underline">Open Attendance →</Link>
+            <Link to="/attendance" className="text-sm font-semibold text-brand-700 hover:underline">Open →</Link>
           </div>
           <div className="p-5 overflow-x-auto">
-            <div className="grid grid-cols-7 md:grid-cols-14 gap-2">
-              {Array.from({ length: 14 }).map((_, i) => {
-                const d = addDays(new Date(), -(13 - i))
-                const rec = myAttendance.find((r) => r.attendance_date === yyyy_mm_dd(d))
-                const s = rec?.status
-                const colors = { present: 'bg-success-500', absent: 'bg-danger-500', half_day: 'bg-warning-500', leave: 'bg-brand-500' }
-                const dayName = d.toLocaleDateString('en-IN', { weekday: 'short' })
-                const dayNum = d.getDate()
-                return (
-                  <div key={i} className="text-center">
-                    <div className="text-[10px] text-slate-500 font-semibold">{dayName}</div>
-                    <div className="mt-1 h-12 rounded-lg grid place-items-center text-xs font-bold text-white shadow-sm transition hover:scale-[1.03]"
-                      style={{ background: rec ? colors[s] || '#cbd5e1' : '#e2e8f0' }}
-                      title={rec ? `${s} · ${formatDate(d)}` : formatDate(d)}>
-                      {rec ? dayNum : <span className="text-slate-500">{dayNum}</span>}
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-            <div className="flex items-center gap-3 mt-4 text-xs text-slate-500 flex-wrap">
-              {[
-                ['bg-success-500', 'Present'], ['bg-warning-500', 'Half Day'],
-                ['bg-brand-500', 'Leave'],   ['bg-danger-500', 'Absent'], ['bg-slate-200 text-slate-500', 'No data'],
-              ].map(([c, l]) => (
-                <span key={l} className="inline-flex items-center gap-1.5">
-                  <span className={`inline-block w-3 h-3 rounded ${c.split(' ')[0]}`} />
-                  <span className={c.split(' ')[1] || ''}>{l}</span>
-                </span>
-              ))}
-            </div>
+            {recentAtt.length === 0 ? (
+              <div className="text-sm text-slate-500 py-6 text-center">No attendance records yet.</div>
+            ) : (
+              <table className="w-full">
+                <thead>
+                  <tr className="table-head">
+                    <th>Date</th><th>In</th><th>Out</th><th>Hours</th><th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {recentAtt.slice(-7).reverse().map((r) => (
+                    <tr key={r.attendance_id} className="table-row">
+                      <td className="font-semibold text-slate-800">{formatDate(r.attendance_date)}</td>
+                      <td className="font-mono text-xs">{r.check_in_time?.slice(0,5) || '—'}</td>
+                      <td className="font-mono text-xs">{r.check_out_time?.slice(0,5) || '—'}</td>
+                      <td>{r.work_duration_minutes ? `${(r.work_duration_minutes/60).toFixed(1)}h` : '—'}</td>
+                      <td><span className={statusBadge(r.status)}>{r.status}</span></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
           </div>
         </div>
 
+        {/* Leave Balance */}
         <div className="card">
           <div className="px-5 pt-5 flex items-center justify-between">
             <div>
               <h3 className="font-bold text-slate-900">Leave Balance</h3>
-              <p className="text-sm text-slate-500">Current entitlements</p>
+              <p className="text-sm text-slate-500">{new Date().getFullYear()} entitlements</p>
             </div>
             <Link to="/leave" className="text-sm font-semibold text-brand-700 hover:underline">All →</Link>
           </div>
           <ul className="divide-y divide-slate-100 mt-2">
             {balances.length === 0 && <li className="p-5 text-sm text-slate-500">No balance records yet.</li>}
             {balances.map((b) => {
-              const avail = Number(b.available_days).toFixed(1)
-              const entitled = Number(b.entitled_days + b.carry_forward_days).toFixed(1)
-              const pct = entitled > 0 ? Math.min(100, (Number(avail) / Number(entitled)) * 100) : 0
+              const avail = Number(b.available_days ?? 0).toFixed(1)
+              const entitled = (Number(b.entitled_days ?? 0) + Number(b.carry_forward_days ?? 0)).toFixed(1)
+              const entitledNum = Number(entitled)
+              const pct = entitledNum > 0 ? Math.min(100, (Number(avail) / entitledNum) * 100) : 0
               return (
                 <li key={b.leave_balance_id} className="px-5 py-3">
                   <div className="flex items-center justify-between mb-1.5">
@@ -204,21 +256,20 @@ export default function EmployeeDashboard() {
             })}
           </ul>
         </div>
-      </section>
+      </div>
 
-      <section className="card">
-        <div className="px-5 pt-5 flex items-center justify-between">
-          <div>
-            <h3 className="font-bold text-slate-900">Recent leave activity</h3>
-            <p className="text-sm text-slate-500">Latest 5 leave requests</p>
+      {/* Recent Leave Activity */}
+      {recentLeaves.length > 0 && (
+        <div className="card">
+          <div className="px-5 pt-5 flex items-center justify-between">
+            <div>
+              <h3 className="font-bold text-slate-900">Recent leave activity</h3>
+              <p className="text-sm text-slate-500">Latest 5 leave requests</p>
+            </div>
+            <Link to="/leave" className="text-sm font-semibold text-brand-700 hover:underline">View all →</Link>
           </div>
-          <Link to="/leave" className="text-sm font-semibold text-brand-700 hover:underline">View all →</Link>
-        </div>
-        <div className="p-5">
-          {recentLeaves.length === 0 ? (
-            <div className="text-sm text-slate-500 py-6 text-center">No leaves yet. Plan your time off by applying for leave 🎉</div>
-          ) : (
-            <table className="w-full min-w-[620px]">
+          <div className="p-5 overflow-x-auto">
+            <table className="w-full">
               <thead>
                 <tr className="table-head">
                   <th>Type</th><th>From</th><th>To</th><th>Days</th><th>Status</th><th>Applied</th>
@@ -232,38 +283,14 @@ export default function EmployeeDashboard() {
                     <td>{formatDate(r.end_date)}</td>
                     <td>{r.total_days}</td>
                     <td><span className={statusBadge(r.status)}>{r.status}</span></td>
-                    <td>{formatDate(r.created_at)}</td>
+                    <td className="text-sm text-slate-500">{formatDate(r.created_at)}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
-          )}
-        </div>
-      </section>
-
-      <section className="card bg-gradient-to-br from-brand-700 to-brand-900 text-white !border-0 overflow-hidden">
-        <div className="relative p-6 grid md:grid-cols-2 gap-4 items-center">
-          <div>
-            <div className="text-xs uppercase tracking-widest text-brand-200 font-semibold">Latest payroll · {stats?.latest_payroll_month || 'Pending'}</div>
-            <h3 className="mt-1 text-2xl font-extrabold">Get instant answers from Dayflow AI</h3>
-            <p className="mt-2 text-brand-100 text-sm max-w-md">
-              Ask about your attendance, leave balance, latest salary, or anything HR-related. No menus, no clicks — just plain English.
-            </p>
-            <div className="mt-4 flex flex-wrap gap-2">
-              <Link to="/ai-assistant" className="btn bg-white text-brand-800 hover:bg-brand-50 shadow-card">Try AI Assistant →</Link>
-              <Link to="/payroll" className="btn bg-white/10 border border-white/20 hover:bg-white/20 text-white">My Payroll</Link>
-            </div>
-          </div>
-          <div className="hidden md:block">
-            <div className="rounded-2xl bg-white/10 backdrop-blur border border-white/15 p-4 text-sm font-mono space-y-2">
-              <div><span className="text-brand-300">you →</span> "How many leaves do I have left?"</div>
-              <div><span className="text-green-300">ai  →</span> Leave Balance: PAID 12.0, SICK 10.5, CASUAL 5.0</div>
-              <div><span className="text-brand-300">you →</span> "Latest salary?"</div>
-              <div><span className="text-green-300">ai  →</span> Net Salary: ₹1,89,320.00 · Month 08/2026</div>
-            </div>
           </div>
         </div>
-      </section>
+      )}
     </div>
   )
 }

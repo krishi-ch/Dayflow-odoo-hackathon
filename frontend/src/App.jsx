@@ -13,34 +13,44 @@ import AttendancePage from './pages/AttendancePage.jsx'
 import LeavePage from './pages/LeavePage.jsx'
 import PayrollPage from './pages/PayrollPage.jsx'
 import EmployeesPage from './pages/admin/EmployeesPage.jsx'
+import BulkApprovals from './pages/admin/BulkApprovals.jsx'
 import NotificationsPage from './pages/NotificationsPage.jsx'
-import AIAssistantPage from './pages/AIAssistantPage.jsx'
-import AuditLogsPage from './pages/admin/AuditLogsPage.jsx'
+import AnalyticsPage from './pages/AnalyticsPage.jsx'
+import CalendarPage from './pages/CalendarPage.jsx'
+import PayslipPage from './pages/PayslipPage.jsx'
 import NotFoundPage from './pages/NotFoundPage.jsx'
+import LandingPage from './pages/LandingPage.jsx'
+
+function PublicRoute({ children }) {
+  const user = JSON.parse(localStorage.getItem('dayflow:user') || 'null')
+  if (user) return <Navigate to="/dashboard" replace />
+  return children
+}
 
 export default function App() {
   return (
     <Routes>
-      <Route path="/login" element={<LoginPage />} />
-      <Route path="/signup" element={<SignupPage />} />
+      <Route path="/" element={<PublicRoute><LandingPage /></PublicRoute>} />
+      <Route path="/login" element={<PublicRoute><LoginPage /></PublicRoute>} />
+      <Route path="/signup" element={<PublicRoute><SignupPage /></PublicRoute>} />
       <Route path="/verify" element={<VerifyPage />} />
 
-      <Route path="/" element={
+      <Route element={
         <ProtectedRoute>
           <AppLayout />
         </ProtectedRoute>
       }>
-        <Route index element={<Navigate to="/dashboard" replace />} />
         <Route path="dashboard" element={<RoleRoute employee={<EmployeeDashboard />} admin={<AdminDashboard />} />} />
         <Route path="profile" element={<ProfilePage />} />
         <Route path="attendance" element={<AttendancePage />} />
         <Route path="leave" element={<LeavePage />} />
         <Route path="payroll" element={<PayrollPage />} />
         <Route path="notifications" element={<NotificationsPage />} />
-        <Route path="ai-assistant" element={<AIAssistantPage />} />
-
+        <Route path="analytics" element={<AdminOnly><AnalyticsPage /></AdminOnly>} />
+        <Route path="calendar" element={<CalendarPage />} />
+        <Route path="payslip" element={<PayslipPage />} />
         <Route path="admin/employees" element={<AdminOnly><EmployeesPage /></AdminOnly>} />
-        <Route path="admin/audit" element={<AdminOnly><AuditLogsPage /></AdminOnly>} />
+        <Route path="admin/approvals" element={<AdminOnly><BulkApprovals /></AdminOnly>} />
       </Route>
 
       <Route path="*" element={<NotFoundPage />} />

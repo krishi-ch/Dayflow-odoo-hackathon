@@ -1,9 +1,9 @@
 import React from 'react'
 import { initials } from '../utils/formatters.js'
 
-export default function Avatar({ user, profile, size = 'md' }) {
+export default function Avatar({ user, profile, size = 'md', showText = true }) {
   const first = profile?.first_name || user?.email?.split('@')[0] || '?'
-  const last  = profile?.last_name || ''
+  const last  = profile?.last_name ?? ''
   const pict  = profile?.profile_picture_url
   const dim =
     size === 'xs' ? 'h-6 w-6 text-xs' :
@@ -24,10 +24,10 @@ export default function Avatar({ user, profile, size = 'md' }) {
           <span>{initials(first, last)}</span>
         )}
       </div>
-      {roleBadge !== null && (
+      {roleBadge !== null && showText && (
         <div className="leading-tight">
           <div className="font-semibold text-slate-800 text-sm">
-            {profile ? `${profile.first_name} ${profile.last_name}` : user?.email}
+            {profile ? `${profile.first_name} ${profile.last_name ?? ''}` : user?.email}
           </div>
           <div className="text-xs text-slate-500">{roleBadge} · {user?.employee_id || ''}</div>
         </div>
